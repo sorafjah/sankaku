@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <!-- モバイルデバイスでの表示とタッチ操作を最適化 --><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>三角形描画アプリ</title>
+    <!-- Tailwind CSSを読み込み --><script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Interフォントの読み込み（Tailwindのデフォルト用） */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            /* iOSでのオーバースクロール（バウンス）を無効化 */
+            overscroll-behavior: none;
+        }
+        canvas {
+            /* タッチ操作をJavaScriptでハンドルするため、
+              ブラウザのデフォルトのタッチ動作（スクロールなど）を無効化します。
+            */
+            touch-action: none;
+            cursor: pointer;
+        }
+        /* アクティブなボタンのスタイル */
+        .tab-btn.active {
+            background-color: #2563EB; /* blue-600 */
+            color: white;
+        }
+        /* スクロールバーを細くする（対応ブラウザのみ） */
+        #tabs::-webkit-scrollbar {
+            height: 4px;
+        }
+        #tabs::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* gray-300 */
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <!-- メインコンテナ --><div class="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden">
+
+        <!-- 1. 描画エリア --><!-- ★ aspect-[4/3] を aspect-[3/2] に変更 --><div class="canvas-container w-full aspect-[3/2] bg-white">
+            <canvas id="drawingCanvas"></canvas>
+        </div>
+
+        <!-- ★★★ 修正: 欠落していた回転スライダーのHTMLを復元 -->
+        <div class="p-4 bg-gray-50 border-b border-t border-gray-200">
+            <label for="rotationSlider" class="block text-sm font-medium text-gray-700 mb-2">回転</label>
+            <input 
+                type="range" 
+                id="rotationSlider" 
+                min="0" 
+                max="360" 
+                value="0" 
+                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            >
+        </div>
+
+        <!-- 3. 三角形選択タブ --><!-- ★ 順序を変更 --><div id="tabs" class="flex justify-around p-2 bg-gray-200 border-t border-gray-300 overflow-x-auto" style="padding-bottom: 0.75rem;"> <!-- pb-1 が p-2 と競合するため style で微調整 -->
+            <!-- ★ テキストを「三角形」に変更、whitespace-nowrap 追加 --><button class="tab-btn free px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 active whitespace-nowrap" data-type="free">三角形</button>
+            <!-- ★ 順序変更 --><button class="tab-btn right-angle px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="right-angle">直角三角形</button>
+            <!-- ★ 順序変更 --><button class="tab-btn isosceles px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="isosceles">二等辺三角形</button>
+            <!-- ★ 順序変更 --><button class="tab-btn right-isosceles px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="right-isosceles">直角二等辺三角形</button>
+            <!-- ★ 順序変更 (一番右へ) --><button class="tab-btn equilateral px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="equilateral">正三角形</button>
+        </div>
+
+    </div>
+
+    <script type="module">
+        // --- 要素の取得 ---
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        const slider = document.getElementById('rotationSlider'); // ★ HTMLが復元されたため、null にならない
+        const tabsContainer = document.getElementById('tabs');
+
+        // --- 状態変数 ---
+        let vertices = []; // 三角形の頂点座標 [{x, y}, {x, y}, {x, y}]
+        let rotation = 0; // 回転角度 (度)
+        let center = { x: 0, y: 0 }; // 回転と移動の中心
+        let currentTriangleType = 'free'; // ★ 現在選択中の三角形タイプ
+
+        // ドラッグ操作に関する状態
+        let selectedVertexIndex = -1; // ドラッグ中の頂点のインデックス (-1は選択なし)
+        let isDraggingShape = false; // 図形全体を移動中か
+        let dragStartPos = { x: 0, y: 0 }; // ドラッグ開始地点
+        
+        // 頂点ハンドルの半径 (当たり判定用に残す。描画はしない)
+        const handleRadius = 15; // ★ タッチしやすいよう判定を少し広げる
+
+        // --- 初期化 ---
+        function initialize() {
+            // キャンバスの解像度をコンテナの表示サイズに合わせる
+            const container = canvas.parentElement;
+            // ★ リサイズ時に解像度を再設定
+            if (canvas.width !== container.offsetWidth || canvas.height !== container.offsetHeight) {
+                canvas.width = container.offsetWidth;
+                canvas.height = container.offsetHeight;
+            }
+
+            // 初期形状を設定 (タブの active 状態を維持)
+            const activeTab = tabsContainer.querySelector('.tab-btn.active');
+            const type = activeTab ? activeTab.dataset.type : 'free';
+            initTriangle(type);
+            
+            // イベントリスナーを登録
+            setupEventListeners();
+        }
+        
+        // ★ 1回だけ実行するリスナー設定
+        function setupEventListeners() {
+            // 既存のリスナーを削除 (リサイズ時の重複登録を防ぐ)
+            tabsContainer.removeEventListener('click', handleTabClick);
+            slider.removeEventListener('input', handleSliderInput); // ★ sliderがnullでなければエラーにならない
+            canvas.removeEventListener('touchstart', handleTouchStart);
+            canvas.removeEventListener('touchmove', handleTouchMove);
+            canvas.removeEventListener('touchend', handleTouchEnd);
+            canvas.removeEventListener('mousedown', handleMouseDown);
+            canvas.removeEventListener('mousemove', handleMouseMove);
+            canvas.removeEventListener('mouseup', handleMouseUp);
+            canvas.removeEventListener('mouseout', handleMouseUp);
+            window.removeEventListener('resize', handleResize); // ★ リサイズハンドラを分離
+
+            // タブの切り替え
+            tabsContainer.addEventListener('click', handleTabClick);
+            // 回転スライダー
+            slider.addEventListener('input', handleSliderInput); // ★ sliderがnullでなければエラーにならない
+            // --- タッチイベント ---
+            canvas.addEventListener('touchstart', handleTouchStart);
+            canvas.addEventListener('touchmove', handleTouchMove);
+            canvas.addEventListener('touchend', handleTouchEnd);
+            // --- マウスイベント (デスクトップ用フォールバック) ---
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            canvas.addEventListener('mouseout', handleMouseUp);
+            
+            // ★ リサイズイベント
+            window.addEventListener('resize', handleResize);
+        }
+        
+        // --- ★ イベントハンドラ関数を分離 ---
+        function handleTabClick(e) {
+            if (e.target.classList.contains('tab-btn')) {
+                tabsContainer.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                e.target.classList.add('active');
+                initTriangle(e.target.dataset.type);
+            }
+        }
+        
+        function handleSliderInput(e) {
+            rotation = parseInt(e.target.value);
+            draw();
+        }
+        
+        function handleResize() {
+            // リサイズ時にキャンバス解像度を更新し、三角形を再初期化
+            const container = canvas.parentElement;
+            canvas.width = container.offsetWidth;
+            canvas.height = container.offsetHeight;
+            
+            const activeTab = tabsContainer.querySelector('.tab-btn.active');
+            const type = activeTab ? activeTab.dataset.type : 'free';
+            initTriangle(type);
+        }
+
+        // --- 三角形の初期化 ---
+        function initTriangle(type) {
+            currentTriangleType = type; // ★ 現在のタイプを保存
+            const w = canvas.width;
+            const h = canvas.height;
+            const size = Math.min(w, h) * 0.4;
+            const midX = w / 2;
+            const midY = h / 2;
+
+            switch (type) {
+                // ★★★ 修正: 正三角形のY座標の計算を修正
+                case 'equilateral': // 正三角形
+                    const height = size * Math.sqrt(3) / 2;
+                    const apexY = midY - (height * 2 / 3);
+                    const baseY = midY + (height * 1 / 3);
+                    vertices = [
+                        { x: midX, y: apexY },
+                        { x: midX - size / 2, y: baseY },
+                        { x: midX + size / 2, y: baseY }
+                    ];
+                    break;
+                case 'right-angle': // 直角三角形
+                    vertices = [
+                        { x: midX - size / 2, y: midY - size / 2 },
+                        { x: midX - size / 2, y: midY + size / 2 },
+                        { x: midX + size / 2, y: midY + size / 2 }
+                    ];
+                    break;
+                case 'isosceles': // 二等辺三角形
+                    vertices = [
+                        { x: midX, y: midY - size / 2 },
+                        { x: midX - size / 1.5, y: midY + size / 2 },
+                        { x: midX + size / 1.5, y: midY + size / 2 }
+                    ];
+                    break;
+                case 'right-isosceles': // 直角二等辺三角形 (vertices[0] が直角)
+                    // ★ ユーザーの要望に基づき、'right-angle' と同じ向きに修正
+                    //    (A=v[0] が直角, B=v[1] が右, C=v[2] が上)
+                    //    この順序 (vAC = vAB.rot(-90)) はドラッグロジックと互換性があります。
+                    vertices = [
+                        { x: midX - size / 2, y: midY + size / 2 }, // A (直角, 頂点0) [Bottom-Left]
+                        { x: midX + size / 2, y: midY + size / 2 }, // B (頂点1) [Bottom-Right]
+                        { x: midX - size / 2, y: midY - size / 2 }  // C (頂点2) [Top-Left]
+                    ];
+                    break;
+                case 'free': // ★ 自由な三角形
+                default:
+                    vertices = [
+                        { x: midX, y: midY - size / 2 },
+                        { x: midX - size / 1.5, y: midY + size / 2 },
+                        { x: midX + size / 2, y: midY + size / 1.5 } // 少し非対称に
+                    ];
+                    break;
+            }
+            
+            // リセット
+            rotation = 0;
+            slider.value = 0; // ★ HTMLが復元されたため、ここでエラーが発生しなくなります
+            calculateCenter();
+            draw();
+        }
+
+        // --- 描画関数 ---
+        function draw() {
+            // キャンバスをクリア
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 回転の中心を計算
+            calculateCenter();
+
+            // 回転を適用
+            ctx.save();
+            ctx.translate(center.x, center.y);
+            ctx.rotate(rotation * Math.PI / 180); // 度をラジアンに変換
+            ctx.translate(-center.x, -center.y);
+
+            // 三角形の描画
+            ctx.beginPath();
+            ctx.moveTo(vertices[0].x, vertices[0].y);
+            ctx.lineTo(vertices[1].x, vertices[1].y);
+            ctx.lineTo(vertices[2].x, vertices[2].y);
+            ctx.closePath();
+            
+            ctx.fillStyle = 'rgba(37, 99, 235, 0.7)'; // blue-600 with opacity
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(29, 78, 216, 1)'; // blue-800
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 回転をリセット
+            ctx.restore();
+
+            // 頂点ハンドルを描画 (★ 要求により描画しない)
+            // drawHandles();
+        }
+
+        // 頂点ハンドル（操作点）を描画
+        function drawHandles() {
+            // ★ 要求に基づき、中身を空にする (当たり判定ロジックは残す)
+        }
+
+        // --- タッチ/マウス ハンドラ ---
+
+        function handleTouchStart(e) {
+            e.preventDefault();
+            const pos = getTouchPos(e);
+            handleInteractionStart(pos);
+        }
+
+        function handleMouseDown(e) {
+            const pos = getMousePos(e);
+            handleInteractionStart(pos);
+        }
+
+        function handleTouchMove(e) {
+            e.preventDefault();
+            if (e.touches.length === 0) return;
+            const pos = getTouchPos(e);
+            handleInteractionMove(pos);
+        }
+
+        function handleMouseMove(e) {
+            if (!isDraggingShape && selectedVertexIndex === -1) return;
+            const pos = getMousePos(e);
+            handleInteractionMove(pos);
+        }
+
+        function handleTouchEnd(e) {
+            handleInteractionEnd();
+        }
+
+        function handleMouseUp(e) {
+            handleInteractionEnd();
+        }
+        
+        function handleInteractionEnd() {
+            selectedVertexIndex = -1;
+            isDraggingShape = false;
+        }
+
+        // --- 共通操作ロジック ---
+
+        function handleInteractionStart(pos) {
+            // 1. 頂点をつかんだかチェック (回転後の座標で当たり判定)
+            const rotatedVertices = getRotatedVertices();
+            selectedVertexIndex = getVertexAtPos(pos, rotatedVertices);
+
+            if (selectedVertexIndex !== -1) {
+                // 頂点を掴んだ
+                isDraggingShape = false;
+                dragStartPos = pos; // ★ ドラッグ開始点を記録
+            } else {
+                // 2. 三角形の内部をつかんだかチェック
+                if (isPointInTriangle(pos, rotatedVertices)) {
+                    isDraggingShape = true;
+                    dragStartPos = pos;
+                }
+            }
+        }
+        
+        function handleInteractionMove(pos) {
+            if (selectedVertexIndex !== -1) {
+                
+                // --- 1. ドラッグ座標を「回転前の」座標系に変換 ---
+                const rad = -rotation * Math.PI / 180; // 逆回転
+                const cos = Math.cos(rad);
+                const sin = Math.sin(rad);
+                
+                // ★ 「自由な三角形」の場合、回転中心が動くと操作感が悪いため、
+                //    ドラッグ開始時の中心 (dragStartCenter) を基準に逆回転する
+                //    ...が、ロジックが複雑化しすぎるため、
+                //    現在の重心 (center) を基準にするシンプルな方法を維持します。
+                //    「free」モードでは vertices[n] のみが変更され、他は変更されません。
+                
+                const relX = pos.x - center.x;
+                const relY = pos.y - center.y;
+                const rotatedX = relX * cos - relY * sin;
+                const rotatedY = relX * sin + relY * cos;
+                // unrotatedPos は、回転前の座標系における現在のドラッグ位置
+                const unrotatedPos = {
+                    x: rotatedX + center.x,
+                    y: rotatedY + center.y
+                };
+
+                // --- 2. 三角形のタイプに応じて変形ロジックを分岐 ---
+
+                if (currentTriangleType === 'free') {
+                    // --- 従来の自由変形ロジック ---
+                    // ★ ご要望の通り、選択された頂点のみを更新します。
+                    vertices[selectedVertexIndex].x = unrotatedPos.x;
+                    vertices[selectedVertexIndex].y = unrotatedPos.y;
+                
+                } else if (currentTriangleType === 'right-angle') {
+                    // --- 直角三角形の制約付き変形 ---
+                    // B (right angle) is vertices[1]
+                    // A is vertices[0]
+                    // C is vertices[2]
+                    
+                    // ★★★ 修正: 'right-angle' の頂点インデックスの定義を initTriangle と合わせる
+                    // init: A=v[0](TL), B=v[1](BL), C=v[2](BR)
+                    // B (v[1]) が直角
+                    
+                    const A = vertices[0];
+                    const B = vertices[1];
+                    const C = vertices[2];
+
+                    if (selectedVertexIndex === 0) { // Dragging A
+                        // Aを、Bを通りvBCに垂直な線（＝線AB）に射影する
+                        const vBC = { x: C.x - B.x, y: C.y - B.y };
+                        const vPerp = { x: -vBC.y, y: vBC.x }; // vBCに垂直なベクトル
+                        const vDrag = { x: unrotatedPos.x - B.x, y: unrotatedPos.y - B.y };
+                        
+                        const dot = vDrag.x * vPerp.x + vDrag.y * vPerp.y;
+                        const lenSq = vPerp.x * vPerp.x + vPerp.y * vPerp.y;
+                        
+                        if (lenSq > 0.0001) {
+                            const scale = dot / lenSq;
+                            const projVec = { x: vPerp.x * scale, y: vPerp.y * scale };
+                            A.x = B.x + projVec.x;
+                            A.y = B.y + projVec.y;
+                        }
+                        // B, C は固定
+
+                    } else if (selectedVertexIndex === 2) { // Dragging C
+                        // Cを、Bを通りvABに垂直な線（＝線BC）に射影する
+                        const vAB = { x: A.x - B.x, y: A.y - B.y };
+                        const vPerp = { x: -vAB.y, y: vAB.x }; // vABに垂直なベクトル
+                        const vDrag = { x: unrotatedPos.x - B.x, y: unrotatedPos.y - B.y };
+                        
+                        const dot = vDrag.x * vPerp.x + vDrag.y * vPerp.y;
+                        const lenSq = vPerp.x * vPerp.x + vPerp.y * vPerp.y;
+                        
+                        if (lenSq > 0.0001) {
+                            const scale = dot / lenSq;
+                            const projVec = { x: vPerp.x * scale, y: vPerp.y * scale };
+                            C.x = B.x + projVec.x;
+                            C.y = B.y + projVec.y;
+                        }
+                        // A, B は固定
+
+                    } else if (selectedVertexIndex === 1) { // Dragging B (the right angle)
+                        // Bを動かすと、三角形全体が平行移動する
+                        const dx = unrotatedPos.x - B.x;
+                        const dy = unrotatedPos.y - B.y;
+                        A.x += dx; A.y += dy;
+                        B.x += dx; B.y += dy;
+                        C.x += dx; C.y += dy;
+                    }
+
+                // ★★★ 修正: 二等辺三角形のロジックを更新
+                } else if (currentTriangleType === 'isosceles') {
+                    // --- 二等辺三角形の制約付き変形 ---
+                    // A (apex) is vertices[0]
+                    // B is vertices[1], C is vertices[2] (base)
+                    const A = vertices[0];
+                    const B = vertices[1];
+                    const C = vertices[2];
+                    
+                    if (selectedVertexIndex === 0) { // Dragging A (apex)
+                        // Aを対称軸（B-Cの垂直二等分線）に射影する
+                        const M = { x: (B.x + C.x) / 2, y: (B.y + C.y) / 2 }; // 底辺の中点
+                        const vAxis = { x: A.x - M.x, y: A.y - M.y }; // 対称軸ベクトル
+                        
+                        const vDrag = { x: unrotatedPos.x - M.x, y: unrotatedPos.y - M.y };
+                        const dot = vDrag.x * vAxis.x + vDrag.y * vAxis.y;
+                        const lenSq = vAxis.x * vAxis.x + vAxis.y * vAxis.y;
+
+                        if (lenSq > 0.0001) {
+                            const scale = dot / lenSq;
+                            const projVec = { x: vAxis.x * scale, y: vAxis.y * scale };
+                            A.x = M.x + projVec.x;
+                            A.y = M.y + projVec.y;
+                        }
+                        // B, C は固定
+
+                    } else { // Dragging B or C (base vertices)
+                        // 対称軸ベクトルを計算 (Aから底辺の中点Mへ)
+                        // ★ B, Cが対称でない場合があるため、ドラッグ開始時のMを基準にすべきだが、
+                        //    簡易的に現在のAと、固定された方の頂点(B or C)の中点を通る垂線を軸とする
+                        
+                        let axisVec;
+                        if (selectedVertexIndex === 1) { // Dragging B
+                            // 軸は A と C の中点 M_AC を通り、 AC に垂直な線
+                            const M_AC = { x: (A.x + C.x) / 2, y: (A.y + C.y) / 2 };
+                            axisVec = { x: A.y - C.y, y: C.x - A.x }; // vACを90度回転
+                        } else { // Dragging C
+                            // 軸は A と B の中点 M_AB を通り、 AB に垂直な線
+                            const M_AB = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+                            axisVec = { x: A.y - B.y, y: B.x - A.x }; // vABを90度回転
+                        }
+
+                        // Aを固定し、B/Cをドラッグすると、C/BがAを基点に対称に動くロジック
+                        // (前回のロジックを再利用)
+                        
+                        // 対称軸ベクトルを計算 (Aから底辺の中点Mへ)
+                        const M = { x: (B.x + C.x) / 2, y: (B.y + C.y) / 2 };
+                        const vAxis = { x: A.x - M.x, y: A.y - M.y };
+                        const lenSq = vAxis.x * vAxis.x + vAxis.y * vAxis.y;
+
+                        if (lenSq > 0.0001) {
+                            // 正規化された対称軸ベクトル n
+                            const len = Math.sqrt(lenSq);
+                            const n = { x: vAxis.x / len, y: vAxis.y / len };
+
+                            if (selectedVertexIndex === 1) { // Dragging B
+                                // Aは固定
+                                B.x = unrotatedPos.x;
+                                B.y = unrotatedPos.y;
+
+                                // vAB_new (v) を計算
+                                const v = { x: B.x - A.x, y: B.y - A.y };
+                                // v を n に射影 (v_proj)
+                                const dot = v.x * n.x + v.y * n.y;
+                                const v_proj = { x: n.x * dot, y: n.y * dot };
+                                // v の n に対する垂線ベクトル (v_perp)
+                                const v_perp = { x: v.x - v_proj.x, y: v.y - v_proj.y };
+                                // 反射ベクトル vAC_new = v_proj - v_perp
+                                const vAC_new = { x: v_proj.x - v_perp.x, y: v_proj.y - v_perp.y };
+                                // Cの新しい位置
+                                C.x = A.x + vAC_new.x;
+                                C.y = A.y + vAC_new.y;
+
+                            } else if (selectedVertexIndex === 2) { // Dragging C
+                                // Aは固定
+                                C.x = unrotatedPos.x;
+                                C.y = unrotatedPos.y;
+
+                                // vAC_new (v) を計算
+                                const v = { x: C.x - A.x, y: C.y - A.y };
+                                // v を n に射影 (v_proj)
+                                const dot = v.x * n.x + v.y * n.y;
+                                const v_proj = { x: n.x * dot, y: n.y * dot };
+                                // v の n に対する垂線ベクトル (v_perp)
+                                const v_perp = { x: v.x - v_proj.x, y: v.y - v_proj.y };
+                                // 反射ベクトル vAB_new = v_proj - v_perp
+                                const vAB_new = { x: v_proj.x - v_perp.x, y: v_proj.y - v_perp.y };
+                                // Bの新しい位置
+                                B.x = A.x + vAB_new.x;
+                                B.y = A.y + vAB_new.y;
+                            }
+                        }
+                    }
+
+                } else if (currentTriangleType === 'right-isosceles') {
+                    // --- 直角二等辺三角形の制約付き変形 ---
+                    // ★★★ 修正: 'right-isosceles' の頂点インデックスの定義を initTriangle と合わせる
+                    // init: A=v[0](BL/直角), B=v[1](BR), C=v[2](TL)
+                    
+                    const A = vertices[0];
+                    const B = vertices[1];
+                    const C = vertices[2];
+
+                    if (selectedVertexIndex === 0) { // Dragging A (the right angle)
+                        // Aを動かすと、三角形全体が平行移動する
+                        const dx = unrotatedPos.x - A.x;
+                        const dy = unrotatedPos.y - A.y;
+                        A.x += dx; A.y += dy;
+                        B.x += dx; B.y += dy;
+                        C.x += dx; C.y += dy;
+                    
+                    } else if (selectedVertexIndex === 1) { // Dragging B
+                        // Bを、Aを通りvAB_origに沿った線に射影する
+                        const vAB_orig = { x: B.x - A.x, y: B.y - A.y };
+                        const vDrag = { x: unrotatedPos.x - A.x, y: unrotatedPos.y - A.y };
+                        
+                        const dot = vDrag.x * vAB_orig.x + vDrag.y * vAB_orig.y;
+                        const lenSq = vAB_orig.x * vAB_orig.x + vAB_orig.y * vAB_orig.y;
+                        
+                        if (lenSq > 0.0001) {
+                            const scale = dot / lenSq;
+                            const vAB_new = { x: vAB_orig.x * scale, y: vAB_orig.y * scale };
+                            B.x = A.x + vAB_new.x;
+                            B.y = A.y + vAB_new.y;
+                            
+                            // vACはvABを-90度回転 (x,y) -> (y,-x)
+                            const vAC_new = { x: vAB_new.y, y: -vAB_new.x };
+                            C.x = A.x + vAC_new.x;
+                            C.y = A.y + vAC_new.y;
+                        }
+
+                    } else if (selectedVertexIndex === 2) { // Dragging C
+                        // Cを、Aを通りvAC_origに沿った線に射影する
+                        const vAC_orig = { x: C.x - A.x, y: C.y - A.y };
+                        const vDrag = { x: unrotatedPos.x - A.x, y: unrotatedPos.y - A.y };
+                        
+                        const dot = vDrag.x * vAC_orig.x + vDrag.y * vAC_orig.y;
+                        const lenSq = vAC_orig.x * vAC_orig.x + vAC_orig.y * vAC_orig.y;
+
+                        if (lenSq > 0.0001) {
+                            const scale = dot / lenSq;
+                            const vAC_new = { x: vAC_orig.x * scale, y: vAC_orig.y * scale };
+                            C.x = A.x + vAC_new.x;
+                            C.y = A.y + vAC_new.y;
+                            
+                            // vABはvACを+90度回転 (x,y) -> (-y,x)
+                            const vAB_new = { x: -vAC_new.y, y: vAC_new.x };
+                            B.x = A.x + vAB_new.x;
+                            B.y = A.y + vAB_new.y;
+                        }
+                    }
+
+                } else {
+                    // --- 拡大・縮小ロジック (equilateralなど) ---
+                    const scale = calculateScale(pos);
+                    applyScale(scale);
+                    dragStartPos = pos;
+                }
+                
+                draw();
+
+            } else if (isDraggingShape) {
+                // 図形全体の移動
+                const dx = pos.x - dragStartPos.x;
+                const dy = pos.y - dragStartPos.y;
+
+                // 全ての頂点を移動
+                vertices.forEach(v => {
+                    v.x += dx;
+                    v.y += dy;
+                });
+
+                dragStartPos = pos; // ドラッグ開始位置を更新
+                draw();
+            }
+        }
+
+        // --- ヘルパー関数 (拡大・縮小用) ---
+        function calculateScale(pos) {
+            // 1. 中心点を取得 (draw()で計算された最新の重心)
+            const currentCenter = { x: center.x, y: center.y };
+            
+            // 2. ドラッグ開始点と中心との距離
+            const startDist = Math.sqrt(Math.pow(dragStartPos.x - currentCenter.x, 2) + Math.pow(dragStartPos.y - currentCenter.y, 2));
+            
+            // 3. 現在点と中心との距離
+            const currentDist = Math.sqrt(Math.pow(pos.x - currentCenter.x, 2) + Math.pow(pos.y - currentCenter.y, 2));
+
+            // 4. スケール係数を計算
+            if (startDist < 1) return 1; // ゼロ除算または小さすぎる移動を回避
+            return currentDist / startDist;
+        }
+
+        function applyScale(scale) {
+            const currentCenter = { x: center.x, y: center.y };
+            // 5. 全ての頂点を中心基準で拡大・縮小
+            vertices.forEach(v => {
+                const relX = v.x - currentCenter.x;
+                const relY = v.y - currentCenter.y;
+                v.x = currentCenter.x + relX * scale;
+                v.y = currentCenter.y + relY * scale;
+            });
+        }
+
+
+        // --- 座標・当たり判定 ユーティリティ ---
+
+        function getTouchPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            return {
+                x: (e.touches[0].clientX - rect.left) * scaleX,
+                y: (e.touches[0].clientY - rect.top) * scaleY
+            };
+        }
+
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        // 中心座標の計算 (重心)
+        function calculateCenter() {
+            center.x = (vertices[0].x + vertices[1].x + vertices[2].x) / 3;
+            center.y = (vertices[0].y + vertices[1].y + vertices[2].y) / 3;
+        }
+
+        // 回転後の頂点座標を取得
+        function getRotatedVertices() {
+            const rad = rotation * Math.PI / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+
+            return vertices.map(v => {
+                const relX = v.x - center.x;
+                const relY = v.y - center.y;
+                const rotatedX = relX * cos - relY * sin;
+                const rotatedY = relX * sin + relY * cos;
+                return {
+                    x: rotatedX + center.x,
+                    y: rotatedY + center.y
+                };
+            });
+        }
+
+
+        // 指定座標(pos)が頂点ハンドル(v)の上にあるか
+        function getVertexAtPos(pos, vertexList) {
+            for (let i = 0; i < vertexList.length; i++) {
+                const v = vertexList[i];
+                const dx = pos.x - v.x;
+                const dy = pos.y - v.y;
+                // ★ handleRadius は当たり判定に引き続き使用
+                if (dx * dx + dy * dy < handleRadius * handleRadius) {
+                    return i; 
+                }
+            }
+            return -1;
+        }
+
+        // 点が三角形の内部にあるか (外積を使った判定)
+        function isPointInTriangle(pos, triVertices) {
+            const [v0, v1, v2] = triVertices;
+            const c1 = (v1.x - v0.x) * (pos.y - v0.y) - (v1.y - v0.y) * (pos.x - v0.x);
+            const c2 = (v2.x - v1.x) * (pos.y - v1.y) - (v2.y - v1.y) * (pos.x - v1.x);
+            const c3 = (v0.x - v2.x) * (pos.y - v2.y) - (v0.y - v2.y) * (pos.x - v2.x);
+            return (c1 >= 0 && c2 >= 0 && c3 >= 0) || (c1 <= 0 && c2 <= 0 && c3 <= 0);
+        }
+
+        // --- アプリケーションの開始 ---
+        document.addEventListener('DOMContentLoaded', () => {
+             // ★ initialize() は DOMContentLoaded 時に一度だけ呼び、
+             //    リスナー設定もその中で一度だけ行う
+            initialize();
+            setupEventListeners();
+        });
+
+    </script>
+</body>
+</html>
+
