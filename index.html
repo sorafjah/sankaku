@@ -2,9 +2,9 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <!-- モバイルデバイスでの表示とタッチ操作を最適化 --><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>三角形描画アプリ</title>
-    <!-- Tailwind CSSを読み込み --><script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Interフォントの読み込み（Tailwindのデフォルト用） */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
@@ -15,7 +15,7 @@
         }
         canvas {
             /* タッチ操作をJavaScriptでハンドルするため、
-              ブラウザのデフォルトのタッチ動作（スクロールなど）を無効化します。
+               ブラウザのデフォルトのタッチ動作（スクロールなど）を無効化します。
             */
             touch-action: none;
             cursor: pointer;
@@ -37,31 +37,29 @@
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
 
-    <!-- メインコンテナ --><div class="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden">
+    <div class="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden">
 
-        <!-- 1. 描画エリア --><!-- ★ aspect-[4/3] を aspect-[3/2] に変更 --><div class="canvas-container w-full aspect-[3/2] bg-white">
+        <div class="canvas-container w-full aspect-[3/2] bg-white">
             <canvas id="drawingCanvas"></canvas>
         </div>
 
-        <!-- ★★★ 修正: 欠落していた回転スライダーのHTMLを復元 -->
-        <div class="p-4 bg-gray-50 border-b border-t border-gray-200">
-            <label for="rotationSlider" class="block text-sm font-medium text-gray-700 mb-2">回転</label>
+        <div class="p-4 bg-gray-50 border-b border-t border-gray-200 flex items-center">
+            <label for="rotationSlider" class="text-sm font-medium text-gray-700 mr-4 whitespace-nowrap">回転</label>
             <input 
                 type="range" 
                 id="rotationSlider" 
                 min="0" 
                 max="360" 
-                value="0" 
+                value="180" 
                 class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
             >
         </div>
 
-        <!-- 3. 三角形選択タブ --><!-- ★ 順序を変更 --><div id="tabs" class="flex justify-around p-2 bg-gray-200 border-t border-gray-300 overflow-x-auto" style="padding-bottom: 0.75rem;"> <!-- pb-1 が p-2 と競合するため style で微調整 -->
-            <!-- ★ テキストを「三角形」に変更、whitespace-nowrap 追加 --><button class="tab-btn free px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 active whitespace-nowrap" data-type="free">三角形</button>
-            <!-- ★ 順序変更 --><button class="tab-btn right-angle px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="right-angle">直角三角形</button>
-            <!-- ★ 順序変更 --><button class="tab-btn isosceles px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="isosceles">二等辺三角形</button>
-            <!-- ★ 順序変更 --><button class="tab-btn right-isosceles px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="right-isosceles">直角二等辺三角形</button>
-            <!-- ★ 順序変更 (一番右へ) --><button class="tab-btn equilateral px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="equilateral">正三角形</button>
+        <div id="tabs" class="flex justify-around p-2 bg-gray-200 border-t border-gray-300 overflow-x-auto" style="padding-bottom: 0.75rem;"> <button class="tab-btn free px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 active whitespace-nowrap" data-type="free">三角形</button>
+            <button class="tab-btn right-angle px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="right-angle">直角三角形</button>
+            <button class="tab-btn isosceles px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="isosceles">二等辺三角形</button>
+            <button class="tab-btn right-isosceles px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="right-isosceles">直角二等辺三角形</button>
+            <button class="tab-btn equilateral px-3 py-2 rounded-lg font-medium text-xs sm:text-sm text-gray-700 transition-all duration-200 whitespace-nowrap" data-type="equilateral">正三角形</button>
         </div>
 
     </div>
@@ -200,8 +198,8 @@
                     break;
                 case 'right-isosceles': // 直角二等辺三角形 (vertices[0] が直角)
                     // ★ ユーザーの要望に基づき、'right-angle' と同じ向きに修正
-                    //    (A=v[0] が直角, B=v[1] が右, C=v[2] が上)
-                    //    この順序 (vAC = vAB.rot(-90)) はドラッグロジックと互換性があります。
+                    //   (A=v[0] が直角, B=v[1] が右, C=v[2] が上)
+                    //   この順序 (vAC = vAB.rot(-90)) はドラッグロジックと互換性があります。
                     vertices = [
                         { x: midX - size / 2, y: midY + size / 2 }, // A (直角, 頂点0) [Bottom-Left]
                         { x: midX + size / 2, y: midY + size / 2 }, // B (頂点1) [Bottom-Right]
@@ -218,9 +216,9 @@
                     break;
             }
             
-            // リセット
-            rotation = 0;
-            slider.value = 0; // ★ HTMLが復元されたため、ここでエラーが発生しなくなります
+            // ★★★ 修正: リセット (スライダーを中央の180度に設定)
+            rotation = 180;
+            slider.value = 180; 
             calculateCenter();
             draw();
         }
@@ -332,10 +330,10 @@
                 const sin = Math.sin(rad);
                 
                 // ★ 「自由な三角形」の場合、回転中心が動くと操作感が悪いため、
-                //    ドラッグ開始時の中心 (dragStartCenter) を基準に逆回転する
-                //    ...が、ロジックが複雑化しすぎるため、
-                //    現在の重心 (center) を基準にするシンプルな方法を維持します。
-                //    「free」モードでは vertices[n] のみが変更され、他は変更されません。
+                //   ドラッグ開始時の中心 (dragStartCenter) を基準に逆回転する
+                //   ...が、ロジックが複雑化しすぎるため、
+                //   現在の重心 (center) を基準にするシンプルな方法を維持します。
+                //   「free」モードでは vertices[n] のみが変更され、他は変更されません。
                 
                 const relX = pos.x - center.x;
                 const relY = pos.y - center.y;
@@ -441,7 +439,7 @@
                     } else { // Dragging B or C (base vertices)
                         // 対称軸ベクトルを計算 (Aから底辺の中点Mへ)
                         // ★ B, Cが対称でない場合があるため、ドラッグ開始時のMを基準にすべきだが、
-                        //    簡易的に現在のAと、固定された方の頂点(B or C)の中点を通る垂線を軸とする
+                        //   簡易的に現在のAと、固定された方の頂点(B or C)の中点を通る垂線を軸とする
                         
                         let axisVec;
                         if (selectedVertexIndex === 1) { // Dragging B
@@ -692,12 +690,11 @@
         // --- アプリケーションの開始 ---
         document.addEventListener('DOMContentLoaded', () => {
              // ★ initialize() は DOMContentLoaded 時に一度だけ呼び、
-             //    リスナー設定もその中で一度だけ行う
+             //   リスナー設定もその中で一度だけ行う
             initialize();
-            setupEventListeners();
+            // setupEventListeners(); // initializeの中で呼ばれるため不要
         });
 
     </script>
 </body>
 </html>
-
