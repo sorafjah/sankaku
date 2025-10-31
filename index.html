@@ -94,9 +94,8 @@
                 canvas.height = container.offsetHeight;
             }
 
-            // ★ ページ読み込み時のスライダーの値を rotation に反映
-            //    -> initTriangle で上書きされるので、initTriangle側で設定する
-            // rotation = parseInt(slider.value, 10);
+            // ★ ページ読み込み時のスライダーの値 (180) から初期回転 (0) を計算
+            rotation = parseInt(slider.value, 10) - 180;
 
             const activeTab = tabsContainer.querySelector('.tab-btn.active');
             const type = activeTab ? activeTab.dataset.type : 'free';
@@ -145,7 +144,9 @@
         }
         
         function handleSliderInput(e) {
-            rotation = parseInt(e.target.value);
+            // ★★★ 修正: スライダーの値 (0-360) を 回転角度 (-180 - +180) にマッピング
+            // 180 (中央) を 0度 とする
+            rotation = parseInt(e.target.value) - 180;
             draw();
         }
         
@@ -492,6 +493,7 @@
             });
         }
 
+D
         // --- 座標・当たり判定 ユーティリティ ---
         function getTouchPos(e) {
             const rect = canvas.getBoundingClientRect();
@@ -562,3 +564,4 @@
     </script>
 </body>
 </html>
+
