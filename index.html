@@ -485,6 +485,7 @@
 
         function applyScale(scale) {
             const currentCenter = { x: center.x, y: center.y };
+            // 5. 全ての頂点を中心基準で拡大・縮小
             vertices.forEach(v => {
                 const relX = v.x - currentCenter.x;
                 const relY = v.y - currentCenter.y;
@@ -493,7 +494,6 @@
             });
         }
 
-D
         // --- 座標・当たり判定 ユーティリティ ---
         function getTouchPos(e) {
             const rect = canvas.getBoundingClientRect();
@@ -564,4 +564,5 @@ D
     </script>
 </body>
 </html>
+
 
